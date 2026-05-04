@@ -11,17 +11,19 @@ const slots = [
 ];
 
 const TOWER_TYPES = [
-  { key: 'laser', name: 'Laser', cost: 45, baseDmg: 11, range: 180, cooldown: 14, bulletColor: '#7effd6', sprite: 'tower_laser' },
-  { key: 'cannon', name: 'Cannon', cost: 60, baseDmg: 24, range: 165, cooldown: 28, bulletColor: '#ffd08a', sprite: 'tower_cannon' },
-  { key: 'ice', name: 'Cryo', cost: 55, baseDmg: 8, range: 190, cooldown: 20, bulletColor: '#b5efff', sprite: 'tower_ice', slow: 0.6 }
+  { key: 'tower1', name: 'Tower 1', cost: 45, baseDmg: 11, range: 180, cooldown: 14, bulletColor: '#7effd6', sprite: 'tower_1', bulletSpeed: 8.4 },
+  { key: 'tower2', name: 'Tower 2', cost: 60, baseDmg: 24, range: 165, cooldown: 28, bulletColor: '#ffd08a', sprite: 'tower_2', bulletSpeed: 7.2 },
+  { key: 'tower3', name: 'Tower 3', cost: 55, baseDmg: 8, range: 190, cooldown: 20, bulletColor: '#b5efff', sprite: 'tower_3', slow: 0.6, bulletSpeed: 8.8 },
+  { key: 'tower4', name: 'Tower 4', cost: 70, baseDmg: 20, range: 172, cooldown: 26, bulletColor: '#ffa6a6', sprite: 'tower_4', bulletSpeed: 7.5 }
 ];
 
 const sprites = {
   road: loadImage('assets/road_tile.svg'),
   enemy: loadImage('assets/enemy_tank.svg'),
-  tower_laser: loadImage('assets/tower_laser.svg'),
-  tower_cannon: loadImage('assets/tower_cannon.svg'),
-  tower_ice: loadImage('assets/tower_ice.svg')
+  tower_1: loadImage('assets/towers/tower_1.png'),
+  tower_2: loadImage('assets/towers/tower_2.png'),
+  tower_3: loadImage('assets/towers/tower_3.png'),
+  tower_4: loadImage('assets/towers/tower_4.png')
 };
 
 let wave = 1;
@@ -29,6 +31,15 @@ let credits = 150;
 let core = 20;
 let pending = false;
 let gameOver = false;
+let lastTime = performance.now();
+const castle = { x: 1030, y: 480, w: 66, h: 82 };
+let selectedTowerIndex = 0;
+const towerButtons = [
+  { x: 470, y: 530, w: 72, h: 72 },
+  { x: 552, y: 530, w: 72, h: 72 },
+  { x: 634, y: 530, w: 72, h: 72 },
+  { x: 716, y: 530, w: 72, h: 72 }
+];
 
 const enemies = [];
 const turrets = [];
@@ -45,12 +56,20 @@ canvas.addEventListener('click', (e) => {
   const r = canvas.getBoundingClientRect();
   const mx = e.clientX - r.left;
   const my = e.clientY - r.top;
+  for (let i = 0; i < towerButtons.length; i++) {
+    const b = towerButtons[i];
+    if (mx >= b.x && mx <= b.x + b.w && my >= b.y && my <= b.y + b.h) {
+      selectedTowerIndex = i;
+      updateHUD();
+      return;
+    }
+  }
 
   for (const s of slots) {
     if (Math.hypot(mx - s.x, my - s.y) >= 28) continue;
 
     if (!s.built) {
-      const towerType = TOWER_TYPES[turrets.length % TOWER_TYPES.length];
+      const towerType = TOWER_TYPES[selectedTowerIndex];
       if (credits < towerType.cost) break;
       credits -= towerType.cost;
       s.built = true;
@@ -73,6 +92,8 @@ canvas.addEventListener('click', (e) => {
 
 window.addEventListener('keydown', (e) => {
   if (e.key.toLowerCase() === 'n' && !pending && !gameOver) spawnWave();
+  const keyNum = Number(e.key);
+  if (keyNum >= 1 && keyNum <= 4) selectedTowerIndex = keyNum - 1;
 });
 
 function loadImage(src) {
@@ -101,18 +122,18 @@ function getTowerType(key) {
   return TOWER_TYPES.find((t) => t.key === key);
 }
 
-function update() {
+function update(dt = 1) {
   if (gameOver) return;
 
   for (const e of enemies) {
     if (e.t < 0) {
-      e.t++;
+      e.t += dt;
       continue;
     }
-    if (e.slowTimer > 0) e.slowTimer--;
+    if (e.slowTimer > 0) e.slowTimer -= dt;
     else e.slow = 1;
 
-    e.p += (e.speed * e.slow) / 140;
+    e.p += ((e.speed * e.slow) / 140) * dt;
     if (e.p >= path.length - 1) {
       e.dead = true;
       core--;
@@ -121,7 +142,7 @@ function update() {
 
   for (const t of turrets) {
     const cfg = getTowerType(t.type);
-    t.cd--;
+    t.cd -= dt;
     if (t.cd > 0) continue;
     const target = enemies.find((e) => !e.dead && e.t >= 0 && Math.hypot(posOnPath(e).x - t.x, posOnPath(e).y - t.y) < cfg.range + t.lvl * 6);
     if (target) {
@@ -129,21 +150,30 @@ function update() {
       bullets.push({
         x: t.x,
         y: t.y,
-        tx: p.x,
-        ty: p.y,
+        target: target,
         life: 24,
         dmg: cfg.baseDmg + 4 * t.lvl,
         color: cfg.bulletColor,
-        slow: cfg.slow || null
+        slow: cfg.slow || null,
+        speed: (cfg.bulletSpeed || 7.5) + t.lvl * 0.35
       });
       t.cd = Math.max(8, cfg.cooldown - t.lvl);
     }
   }
 
   for (const b of bullets) {
-    b.life--;
-    b.x += (b.tx - b.x) * 0.25;
-    b.y += (b.ty - b.y) * 0.25;
+    b.life -= dt;
+    if (b.target && !b.target.dead && b.target.t >= 0) {
+      const tp = posOnPath(b.target);
+      const dx = tp.x - b.x;
+      const dy = tp.y - b.y;
+      const dist = Math.hypot(dx, dy) || 1;
+      b.x += (dx / dist) * b.speed * dt;
+      b.y += (dy / dist) * b.speed * dt;
+    } else {
+      b.dead = true;
+      continue;
+    }
     for (const e of enemies) {
       if (e.dead || e.t < 0) continue;
       const p = posOnPath(e);
@@ -192,6 +222,7 @@ function draw() {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   drawPath();
+  drawCastle();
 
   for (const s of slots) {
     ctx.fillStyle = s.built ? '#2d3a43' : '#445563';
@@ -206,7 +237,7 @@ function draw() {
   turrets.forEach((t) => {
     const cfg = getTowerType(t.type);
     const spr = sprites[cfg.sprite];
-    ctx.drawImage(spr, t.x - 30, t.y - 38, 60, 60);
+    drawSpriteFitted(spr, t.x - 30, t.y - 38, 60, 60);
     ctx.fillStyle = '#f2f5fa';
     ctx.font = 'bold 12px Inter, sans-serif';
     ctx.fillText(`Lv.${t.lvl}`, t.x - 16, t.y + 36);
@@ -231,12 +262,13 @@ function draw() {
   });
 
   ctx.fillStyle = '#111c';
-  ctx.fillRect(18, 520, 430, 106);
+  ctx.fillRect(18, 520, 770, 106);
   ctx.fillStyle = '#fff';
   ctx.font = '14px Inter, sans-serif';
-  ctx.fillText('Click empty slot: build next tower type (Laser/Cannon/Cryo)', 30, 548);
+  ctx.fillText('Выбери башню справа (1-4), затем кликни по пустому слоту для постройки.', 30, 548);
   ctx.fillText('Click built tower: upgrade to Lv.3', 30, 570);
   ctx.fillText('N: Next Wave', 30, 592);
+  drawTowerChooser();
 
   if (gameOver) {
     ctx.fillStyle = '#000b';
@@ -267,14 +299,70 @@ function drawPath() {
   ctx.restore();
 }
 
+function drawCastle() {
+  ctx.fillStyle = '#6b6772';
+  ctx.fillRect(castle.x - castle.w / 2, castle.y - castle.h / 2, castle.w, castle.h);
+  ctx.fillStyle = '#8a8792';
+  ctx.fillRect(castle.x - castle.w / 2 - 8, castle.y - castle.h / 2 - 12, 18, 24);
+  ctx.fillRect(castle.x + castle.w / 2 - 10, castle.y - castle.h / 2 - 12, 18, 24);
+  ctx.fillStyle = '#2a2730';
+  ctx.fillRect(castle.x - 12, castle.y + 8, 24, 33);
+  const hpW = 180;
+  const hpX = castle.x - hpW / 2;
+  const hpY = castle.y + 62;
+  ctx.fillStyle = '#111a';
+  ctx.fillRect(hpX, hpY, hpW, 12);
+  ctx.fillStyle = '#ff6f6f';
+  ctx.fillRect(hpX, hpY, (core / 20) * hpW, 12);
+  ctx.strokeStyle = '#e4e8ee';
+  ctx.strokeRect(hpX, hpY, hpW, 12);
+  ctx.fillStyle = '#e9eef7';
+  ctx.font = '12px Inter, sans-serif';
+  ctx.fillText(`Castle HP: ${core}/20`, hpX + 44, hpY - 6);
+}
+
+function drawTowerChooser() {
+  for (let i = 0; i < towerButtons.length; i++) {
+    const btn = towerButtons[i];
+    const tower = TOWER_TYPES[i];
+    ctx.fillStyle = i === selectedTowerIndex ? '#4d6f8f' : '#2f3c49';
+    ctx.fillRect(btn.x, btn.y, btn.w, btn.h);
+    ctx.strokeStyle = '#c6d9ea';
+    ctx.strokeRect(btn.x, btn.y, btn.w, btn.h);
+    drawSpriteFitted(sprites[tower.sprite], btn.x + 6, btn.y + 6, 44, 44);
+    ctx.fillStyle = '#fff';
+    ctx.font = '12px Inter, sans-serif';
+    ctx.fillText(`${i + 1}`, btn.x + 54, btn.y + 24);
+    ctx.fillText(`${tower.cost}`, btn.x + 52, btn.y + 42);
+  }
+}
+
+function drawSpriteFitted(img, x, y, w, h) {
+  if (!img || !img.naturalWidth || !img.naturalHeight) {
+    ctx.fillStyle = '#4a5b6c';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#c6d9ea';
+    ctx.strokeRect(x, y, w, h);
+    return;
+  }
+  const scale = Math.min(w / img.naturalWidth, h / img.naturalHeight);
+  const dw = img.naturalWidth * scale;
+  const dh = img.naturalHeight * scale;
+  const dx = x + (w - dw) / 2;
+  const dy = y + (h - dh) / 2;
+  ctx.drawImage(img, dx, dy, dw, dh);
+}
+
 function updateHUD() {
   stats.wave.textContent = `Wave: ${wave}`;
   stats.credits.textContent = `Credits: ${credits}`;
   stats.core.textContent = `Core HP: ${core}`;
 }
 
-function loop() {
-  update();
+function loop(now = performance.now()) {
+  const delta = Math.min(2.2, (now - lastTime) / 16.6667);
+  lastTime = now;
+  update(delta);
   draw();
   requestAnimationFrame(loop);
 }
