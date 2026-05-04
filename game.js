@@ -11,19 +11,19 @@ const slots = [
 ];
 
 const TOWER_TYPES = [
-  { key: 'focus', name: 'Focus', cost: 45, baseDmg: 10, range: 190, cooldown: 12, bulletColor: '#7effd6', sprite: 'tower_focus', bulletSpeed: 8.4 },
-  { key: 'bandit', name: 'Bandit', cost: 60, baseDmg: 18, range: 175, cooldown: 20, bulletColor: '#ffd08a', sprite: 'tower_bandit', bulletSpeed: 7.2 },
-  { key: 'salute', name: 'Salute', cost: 52, baseDmg: 9, range: 185, cooldown: 14, bulletColor: '#b5efff', sprite: 'tower_salute', slow: 0.78, bulletSpeed: 8.8 },
-  { key: 'chief', name: 'Chief', cost: 70, baseDmg: 25, range: 170, cooldown: 30, bulletColor: '#ffa6a6', sprite: 'tower_chief', bulletSpeed: 6.8 }
+  { key: 'tower1', name: 'Tower 1', cost: 45, baseDmg: 11, range: 180, cooldown: 14, bulletColor: '#7effd6', sprite: 'tower_1', bulletSpeed: 8.4 },
+  { key: 'tower2', name: 'Tower 2', cost: 60, baseDmg: 24, range: 165, cooldown: 28, bulletColor: '#ffd08a', sprite: 'tower_2', bulletSpeed: 7.2 },
+  { key: 'tower3', name: 'Tower 3', cost: 55, baseDmg: 8, range: 190, cooldown: 20, bulletColor: '#b5efff', sprite: 'tower_3', slow: 0.6, bulletSpeed: 8.8 },
+  { key: 'tower4', name: 'Tower 4', cost: 70, baseDmg: 20, range: 172, cooldown: 26, bulletColor: '#ffa6a6', sprite: 'tower_4', bulletSpeed: 7.5 }
 ];
 
 const sprites = {
   road: loadImage('assets/road_tile.svg'),
   enemy: loadImage('assets/enemy_tank.svg'),
-  tower_focus: loadImage('assets/tower_focus.svg'),
-  tower_bandit: loadImage('assets/tower_bandit.svg'),
-  tower_salute: loadImage('assets/tower_salute.svg'),
-  tower_chief: loadImage('assets/tower_chief.svg')
+  tower_1: loadImage('assets/towers/tower_1.png'),
+  tower_2: loadImage('assets/towers/tower_2.png'),
+  tower_3: loadImage('assets/towers/tower_3.png'),
+  tower_4: loadImage('assets/towers/tower_4.png')
 };
 
 let wave = 1;
@@ -33,6 +33,13 @@ let pending = false;
 let gameOver = false;
 let lastTime = performance.now();
 const castle = { x: 1030, y: 480, w: 66, h: 82 };
+let selectedTowerIndex = 0;
+const towerButtons = [
+  { x: 470, y: 530, w: 72, h: 72 },
+  { x: 552, y: 530, w: 72, h: 72 },
+  { x: 634, y: 530, w: 72, h: 72 },
+  { x: 716, y: 530, w: 72, h: 72 }
+];
 
 const enemies = [];
 const turrets = [];
@@ -49,12 +56,20 @@ canvas.addEventListener('click', (e) => {
   const r = canvas.getBoundingClientRect();
   const mx = e.clientX - r.left;
   const my = e.clientY - r.top;
+  for (let i = 0; i < towerButtons.length; i++) {
+    const b = towerButtons[i];
+    if (mx >= b.x && mx <= b.x + b.w && my >= b.y && my <= b.y + b.h) {
+      selectedTowerIndex = i;
+      updateHUD();
+      return;
+    }
+  }
 
   for (const s of slots) {
     if (Math.hypot(mx - s.x, my - s.y) >= 28) continue;
 
     if (!s.built) {
-      const towerType = TOWER_TYPES[turrets.length % TOWER_TYPES.length];
+      const towerType = TOWER_TYPES[selectedTowerIndex];
       if (credits < towerType.cost) break;
       credits -= towerType.cost;
       s.built = true;
@@ -77,6 +92,8 @@ canvas.addEventListener('click', (e) => {
 
 window.addEventListener('keydown', (e) => {
   if (e.key.toLowerCase() === 'n' && !pending && !gameOver) spawnWave();
+  const keyNum = Number(e.key);
+  if (keyNum >= 1 && keyNum <= 4) selectedTowerIndex = keyNum - 1;
 });
 
 function loadImage(src) {
@@ -220,7 +237,7 @@ function draw() {
   turrets.forEach((t) => {
     const cfg = getTowerType(t.type);
     const spr = sprites[cfg.sprite];
-    ctx.drawImage(spr, t.x - 30, t.y - 38, 60, 60);
+    drawSpriteFitted(spr, t.x - 30, t.y - 38, 60, 60);
     ctx.fillStyle = '#f2f5fa';
     ctx.font = 'bold 12px Inter, sans-serif';
     ctx.fillText(`Lv.${t.lvl}`, t.x - 16, t.y + 36);
@@ -245,12 +262,13 @@ function draw() {
   });
 
   ctx.fillStyle = '#111c';
-  ctx.fillRect(18, 520, 430, 106);
+  ctx.fillRect(18, 520, 770, 106);
   ctx.fillStyle = '#fff';
   ctx.font = '14px Inter, sans-serif';
-  ctx.fillText('Click empty slot: build next tower type (Focus/Bandit/Salute/Chief)', 30, 548);
+  ctx.fillText('Выбери башню справа (1-4), затем кликни по пустому слоту для постройки.', 30, 548);
   ctx.fillText('Click built tower: upgrade to Lv.3', 30, 570);
   ctx.fillText('N: Next Wave', 30, 592);
+  drawTowerChooser();
 
   if (gameOver) {
     ctx.fillStyle = '#000b';
@@ -301,6 +319,38 @@ function drawCastle() {
   ctx.fillStyle = '#e9eef7';
   ctx.font = '12px Inter, sans-serif';
   ctx.fillText(`Castle HP: ${core}/20`, hpX + 44, hpY - 6);
+}
+
+function drawTowerChooser() {
+  for (let i = 0; i < towerButtons.length; i++) {
+    const btn = towerButtons[i];
+    const tower = TOWER_TYPES[i];
+    ctx.fillStyle = i === selectedTowerIndex ? '#4d6f8f' : '#2f3c49';
+    ctx.fillRect(btn.x, btn.y, btn.w, btn.h);
+    ctx.strokeStyle = '#c6d9ea';
+    ctx.strokeRect(btn.x, btn.y, btn.w, btn.h);
+    drawSpriteFitted(sprites[tower.sprite], btn.x + 6, btn.y + 6, 44, 44);
+    ctx.fillStyle = '#fff';
+    ctx.font = '12px Inter, sans-serif';
+    ctx.fillText(`${i + 1}`, btn.x + 54, btn.y + 24);
+    ctx.fillText(`${tower.cost}`, btn.x + 52, btn.y + 42);
+  }
+}
+
+function drawSpriteFitted(img, x, y, w, h) {
+  if (!img || !img.naturalWidth || !img.naturalHeight) {
+    ctx.fillStyle = '#4a5b6c';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#c6d9ea';
+    ctx.strokeRect(x, y, w, h);
+    return;
+  }
+  const scale = Math.min(w / img.naturalWidth, h / img.naturalHeight);
+  const dw = img.naturalWidth * scale;
+  const dh = img.naturalHeight * scale;
+  const dx = x + (w - dw) / 2;
+  const dy = y + (h - dh) / 2;
+  ctx.drawImage(img, dx, dy, dw, dh);
 }
 
 function updateHUD() {
