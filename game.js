@@ -11,17 +11,19 @@ const slots = [
 ];
 
 const TOWER_TYPES = [
-  { key: 'laser', name: 'Laser', cost: 45, baseDmg: 11, range: 180, cooldown: 14, bulletColor: '#7effd6', sprite: 'tower_laser' },
-  { key: 'cannon', name: 'Cannon', cost: 60, baseDmg: 24, range: 165, cooldown: 28, bulletColor: '#ffd08a', sprite: 'tower_cannon' },
-  { key: 'ice', name: 'Cryo', cost: 55, baseDmg: 8, range: 190, cooldown: 20, bulletColor: '#b5efff', sprite: 'tower_ice', slow: 0.6 }
+  { key: 'focus', name: 'Focus', cost: 45, baseDmg: 10, range: 190, cooldown: 12, bulletColor: '#7effd6', sprite: 'tower_focus', bulletSpeed: 8.4 },
+  { key: 'bandit', name: 'Bandit', cost: 60, baseDmg: 18, range: 175, cooldown: 20, bulletColor: '#ffd08a', sprite: 'tower_bandit', bulletSpeed: 7.2 },
+  { key: 'salute', name: 'Salute', cost: 52, baseDmg: 9, range: 185, cooldown: 14, bulletColor: '#b5efff', sprite: 'tower_salute', slow: 0.78, bulletSpeed: 8.8 },
+  { key: 'chief', name: 'Chief', cost: 70, baseDmg: 25, range: 170, cooldown: 30, bulletColor: '#ffa6a6', sprite: 'tower_chief', bulletSpeed: 6.8 }
 ];
 
 const sprites = {
   road: loadImage('assets/road_tile.svg'),
   enemy: loadImage('assets/enemy_tank.svg'),
-  tower_laser: loadImage('assets/tower_laser.svg'),
-  tower_cannon: loadImage('assets/tower_cannon.svg'),
-  tower_ice: loadImage('assets/tower_ice.svg')
+  tower_focus: loadImage('assets/tower_focus.svg'),
+  tower_bandit: loadImage('assets/tower_bandit.svg'),
+  tower_salute: loadImage('assets/tower_salute.svg'),
+  tower_chief: loadImage('assets/tower_chief.svg')
 };
 
 let wave = 1;
@@ -29,6 +31,8 @@ let credits = 150;
 let core = 20;
 let pending = false;
 let gameOver = false;
+let lastTime = performance.now();
+const castle = { x: 1030, y: 480, w: 66, h: 82 };
 
 const enemies = [];
 const turrets = [];
@@ -101,18 +105,18 @@ function getTowerType(key) {
   return TOWER_TYPES.find((t) => t.key === key);
 }
 
-function update() {
+function update(dt = 1) {
   if (gameOver) return;
 
   for (const e of enemies) {
     if (e.t < 0) {
-      e.t++;
+      e.t += dt;
       continue;
     }
-    if (e.slowTimer > 0) e.slowTimer--;
+    if (e.slowTimer > 0) e.slowTimer -= dt;
     else e.slow = 1;
 
-    e.p += (e.speed * e.slow) / 140;
+    e.p += ((e.speed * e.slow) / 140) * dt;
     if (e.p >= path.length - 1) {
       e.dead = true;
       core--;
@@ -121,7 +125,7 @@ function update() {
 
   for (const t of turrets) {
     const cfg = getTowerType(t.type);
-    t.cd--;
+    t.cd -= dt;
     if (t.cd > 0) continue;
     const target = enemies.find((e) => !e.dead && e.t >= 0 && Math.hypot(posOnPath(e).x - t.x, posOnPath(e).y - t.y) < cfg.range + t.lvl * 6);
     if (target) {
@@ -129,21 +133,30 @@ function update() {
       bullets.push({
         x: t.x,
         y: t.y,
-        tx: p.x,
-        ty: p.y,
+        target: target,
         life: 24,
         dmg: cfg.baseDmg + 4 * t.lvl,
         color: cfg.bulletColor,
-        slow: cfg.slow || null
+        slow: cfg.slow || null,
+        speed: (cfg.bulletSpeed || 7.5) + t.lvl * 0.35
       });
       t.cd = Math.max(8, cfg.cooldown - t.lvl);
     }
   }
 
   for (const b of bullets) {
-    b.life--;
-    b.x += (b.tx - b.x) * 0.25;
-    b.y += (b.ty - b.y) * 0.25;
+    b.life -= dt;
+    if (b.target && !b.target.dead && b.target.t >= 0) {
+      const tp = posOnPath(b.target);
+      const dx = tp.x - b.x;
+      const dy = tp.y - b.y;
+      const dist = Math.hypot(dx, dy) || 1;
+      b.x += (dx / dist) * b.speed * dt;
+      b.y += (dy / dist) * b.speed * dt;
+    } else {
+      b.dead = true;
+      continue;
+    }
     for (const e of enemies) {
       if (e.dead || e.t < 0) continue;
       const p = posOnPath(e);
@@ -192,6 +205,7 @@ function draw() {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   drawPath();
+  drawCastle();
 
   for (const s of slots) {
     ctx.fillStyle = s.built ? '#2d3a43' : '#445563';
@@ -234,7 +248,7 @@ function draw() {
   ctx.fillRect(18, 520, 430, 106);
   ctx.fillStyle = '#fff';
   ctx.font = '14px Inter, sans-serif';
-  ctx.fillText('Click empty slot: build next tower type (Laser/Cannon/Cryo)', 30, 548);
+  ctx.fillText('Click empty slot: build next tower type (Focus/Bandit/Salute/Chief)', 30, 548);
   ctx.fillText('Click built tower: upgrade to Lv.3', 30, 570);
   ctx.fillText('N: Next Wave', 30, 592);
 
@@ -267,14 +281,38 @@ function drawPath() {
   ctx.restore();
 }
 
+function drawCastle() {
+  ctx.fillStyle = '#6b6772';
+  ctx.fillRect(castle.x - castle.w / 2, castle.y - castle.h / 2, castle.w, castle.h);
+  ctx.fillStyle = '#8a8792';
+  ctx.fillRect(castle.x - castle.w / 2 - 8, castle.y - castle.h / 2 - 12, 18, 24);
+  ctx.fillRect(castle.x + castle.w / 2 - 10, castle.y - castle.h / 2 - 12, 18, 24);
+  ctx.fillStyle = '#2a2730';
+  ctx.fillRect(castle.x - 12, castle.y + 8, 24, 33);
+  const hpW = 180;
+  const hpX = castle.x - hpW / 2;
+  const hpY = castle.y + 62;
+  ctx.fillStyle = '#111a';
+  ctx.fillRect(hpX, hpY, hpW, 12);
+  ctx.fillStyle = '#ff6f6f';
+  ctx.fillRect(hpX, hpY, (core / 20) * hpW, 12);
+  ctx.strokeStyle = '#e4e8ee';
+  ctx.strokeRect(hpX, hpY, hpW, 12);
+  ctx.fillStyle = '#e9eef7';
+  ctx.font = '12px Inter, sans-serif';
+  ctx.fillText(`Castle HP: ${core}/20`, hpX + 44, hpY - 6);
+}
+
 function updateHUD() {
   stats.wave.textContent = `Wave: ${wave}`;
   stats.credits.textContent = `Credits: ${credits}`;
   stats.core.textContent = `Core HP: ${core}`;
 }
 
-function loop() {
-  update();
+function loop(now = performance.now()) {
+  const delta = Math.min(2.2, (now - lastTime) / 16.6667);
+  lastTime = now;
+  update(delta);
   draw();
   requestAnimationFrame(loop);
 }
